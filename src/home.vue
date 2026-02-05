@@ -3,7 +3,7 @@
 </script>
 
 <template>
-  <h1>Lemonade Stand Home Page</h1>
+  <h1>Word Game Home Page</h1>
 </template>
 
 <style scoped>
