@@ -4,16 +4,19 @@
       title: "Word Dynamite",
       description: "Fast-paced word-based game.",
       image: "cartoon-dynamite-new-temp.png",
+      href: "#/worddynamite",
     },
     {
       title: "Wordle Game",
       description: "Wordle, but the same?",
       image: "cartoon-wordle-temp.png",
+      href: "#/wordlegame",
     },
     {
       title: "Wavelength",
       description: "Guessing game about finding common ground.",
       image: "cartoon-wavelength-temp.png",
+      href: "#/wavelength",
     },
   ]
 </script>
@@ -37,7 +40,10 @@
           <v-card-title class="text-h6">{{ game.title }}</v-card-title>
           <v-card-text>{{ game.description }}</v-card-text>
           <v-card-actions>
-            <v-btn variant="tonal">Play Game</v-btn>
+            <v-btn
+                variant="tonal"
+                :href="game.href"
+            >Play Game</v-btn>
           </v-card-actions>
         </v-col>
       </v-row>
