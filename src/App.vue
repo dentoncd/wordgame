@@ -2,10 +2,18 @@
 import { ref, computed } from 'vue'
 import home from './home.vue'
 import about from './about.vue'
+import worddynamite from './worddynamite.vue'
+import wordlegame from './wordlegame.vue'
+import wavelength from './wavelength.vue'
+import request from './request.vue'
 
 const routes = {
   '/' : home,
-  '/about' : about // change this to games later
+  '/about' : about,
+  '/request' : request, // change this to games later
+  '/worddynamite' : worddynamite,
+  '/wordlegame' : wordlegame,
+  '/wavelength' : wavelength
 }
 
 const currPath = ref(window.location.hash)
@@ -34,6 +42,13 @@ const currView = computed(() => {
           prepend-icon="mdi-information-variant-circle-outline"
           href="#/about"
           title="About Us"
+          @click="drawer = !drawer"
+      >
+      </v-list-item>
+      <v-list-item
+          prepend-icon="mdi-account-box-outline"
+          href="#/request"
+          title="Request a Game"
           @click="drawer = !drawer"
       >
       </v-list-item>
