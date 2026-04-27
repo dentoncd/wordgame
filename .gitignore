@@ -1,2 +1,4 @@
-/node_modules
-/.idea
+node_modules/
+dist/
+.idea/
+wordgame-api/db/gamerequests.db

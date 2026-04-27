@@ -10,7 +10,7 @@ import request from './request.vue'
 const routes = {
   '/' : home,
   '/about' : about,
-  '/request' : request, // change this to games later
+  '/request' : request,
   '/worddynamite' : worddynamite,
   '/wordlegame' : wordlegame,
   '/wavelength' : wavelength
