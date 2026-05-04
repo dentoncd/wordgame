@@ -5,6 +5,7 @@ import about from './about.vue'
 import worddynamite from './worddynamite.vue'
 import wordlegame from './wordlegame.vue'
 import wavelength from './wavelength.vue'
+import projectdodge from './projectdodge.vue'
 import request from './request.vue'
 
 const routes = {
@@ -13,7 +14,8 @@ const routes = {
   '/request' : request,
   '/worddynamite' : worddynamite,
   '/wordlegame' : wordlegame,
-  '/wavelength' : wavelength
+  '/wavelength' : wavelength,
+  '/projectdodge' : projectdodge
 }
 
 const currPath = ref(window.location.hash)
@@ -55,7 +57,7 @@ const currView = computed(() => {
     </v-navigation-drawer>
     <v-app-bar color="grey-darken-4" class="text-blue-grey-lighten-5 text-h2 mainHeader" height="100">
       <v-app-bar-nav-icon @click="drawer = !drawer"></v-app-bar-nav-icon>
-      <v-app-bar-title class="text-h2 mainHeader">Word Games</v-app-bar-title>
+      <v-app-bar-title class="text-h2 mainHeader">Word Games & More</v-app-bar-title>
     </v-app-bar>
     <v-main>
       <component :is="currView"></component>
@@ -75,6 +77,7 @@ const currView = computed(() => {
   background-color: #212121
 }
 .footer-color-custom {
-  background-color: #191919
+  background-color: #191919;
+  color: white;
 }
 </style>
