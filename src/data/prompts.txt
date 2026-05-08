@@ -47,7 +47,6 @@ but
 as
 yc
 tit
-ych
 ace
 ara
 op
@@ -87,7 +86,6 @@ ck
 cl
 co
 cr
-cs
 ct
 cu
 cy
@@ -138,7 +136,6 @@ gy
 ha
 he
 hi
-hm
 ho
 hr
 hu
@@ -169,14 +166,12 @@ ki
 kl
 kn
 ko
-kr
 ky
 la
 le
 li
 lk
 ll
-ln
 lo
 ls
 lt
@@ -287,7 +282,6 @@ ur
 us
 ut
 uv
-uvu
 va
 ve
 vi
@@ -347,7 +341,10 @@ ide
 ade
 are
 ida
-aba
 abb
 abi
 aca
+exo
+exp
+exa
+man

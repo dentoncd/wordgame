@@ -1,39 +1,119 @@
 <script setup>
-import { computed, onUnmounted, ref } from "vue";
+import {computed, onUnmounted, ref} from "vue";
 
-import promptsTxt from "../prompts.txt?raw";
-import pokemonTxt from "../allpokemon.txt?raw";
-import hyphTxt from "../hyphen-dict.txt?raw";
-import wordsTxt from "../wordbombdict.txt?raw";
+import promptsTxt from "./data/prompts.txt?raw";
+import pokemonTxt from "./data/allpokemon.txt?raw";
+import wordsTxt from "./data/wordbombdict.txt?raw";
 
 // CONSTANTS
 const STARTING_LIVES = 2;
 const STARTING_LETTER_COUNT = 1;
 const STARTING_BOMB_TIME = 10000;
 const MIN_BOMB_TIME = 2500;
-const STREAK_SPEEDUP = 0.97;
+const STREAK_SPEEDUP = 0.99;
+const HARD_BOMB_TIME = 7000;
+const HARD_MIN_BOMB_TIME = 1800;
+const HARD_STREAK_SPEEDUP = 0.94;
+const EXPERT_MIN_PROMPT_LENGTH = 3;
+const MIN_EXACT_LENGTH = 4;
+const MAX_EXACT_LENGTH = 12;
 const TIMER_TICK = 50;
 
 const prompts = parseLines(promptsTxt);
+const normalWords = parseLines(wordsTxt);
+
+// store each mode's valid words so different modes can use different dictionaries later
 const dictionaries = {
-  normal: new Set(parseLines(wordsTxt)),
-  shiritori: new Set(parseLines(wordsTxt)),
+  normal: new Set(normalWords),
+  hard: new Set(normalWords),
+  expert: new Set(normalWords),
+  exactLength: new Set(normalWords),
+  blanks: new Set(normalWords),
+  speedrun: new Set(normalWords),
+  forbidden: new Set(normalWords),
+  shiritori: new Set(normalWords),
   pokemon: new Set(parsePokemonLines(pokemonTxt)),
-  hyphenated: new Set(parseLines(hyphTxt)),
   /* TODO:
-      add hard mode
-      add expert mode
-      probably scrap blanks mode
       add more modes
    */
 };
 
+// mode config, makes it easier to change lives/timer speed without editing game logic
+const modeSettings = {
+  normal: {
+    label: "Normal",
+    lives: STARTING_LIVES,
+    bombTime: STARTING_BOMB_TIME,
+    minBombTime: MIN_BOMB_TIME,
+    speedup: STREAK_SPEEDUP,
+  },
+  hard: {
+    label: "Hard",
+    lives: STARTING_LIVES,
+    bombTime: HARD_BOMB_TIME,
+    minBombTime: HARD_MIN_BOMB_TIME,
+    speedup: HARD_STREAK_SPEEDUP,
+  },
+  expert: {
+    label: "Expert",
+    lives: STARTING_LIVES,
+    bombTime: STARTING_BOMB_TIME,
+    minBombTime: MIN_BOMB_TIME,
+    speedup: STREAK_SPEEDUP,
+    minPromptLength: EXPERT_MIN_PROMPT_LENGTH,
+  },
+  exactLength: {
+    label: "Exact Length",
+    lives: STARTING_LIVES,
+    bombTime: STARTING_BOMB_TIME,
+    minBombTime: MIN_BOMB_TIME,
+    speedup: STREAK_SPEEDUP,
+  },
+  blanks: {
+    label: "Blanks",
+    lives: STARTING_LIVES,
+    bombTime: STARTING_BOMB_TIME,
+    minBombTime: MIN_BOMB_TIME,
+    speedup: STREAK_SPEEDUP,
+  },
+  speedrun: {
+    label: "Speedrun",
+    lives: 1,
+    bombTime: STARTING_BOMB_TIME,
+    minBombTime: MIN_BOMB_TIME,
+    speedup: STREAK_SPEEDUP,
+  },
+  forbidden: {
+    label: "Forbidden Letter",
+    lives: STARTING_LIVES,
+    bombTime: STARTING_BOMB_TIME,
+    minBombTime: MIN_BOMB_TIME,
+    speedup: STREAK_SPEEDUP,
+  },
+  shiritori: {
+    label: "Shiritori",
+    lives: STARTING_LIVES,
+    bombTime: STARTING_BOMB_TIME,
+    minBombTime: MIN_BOMB_TIME,
+    speedup: STREAK_SPEEDUP,
+  },
+  pokemon: {
+    label: "Pokemon",
+    lives: STARTING_LIVES,
+    bombTime: STARTING_BOMB_TIME,
+    minBombTime: MIN_BOMB_TIME,
+    speedup: STREAK_SPEEDUP,
+  },
+};
+
 // Game Variables
-const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
+const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWY".split("");
 
 const mode = ref(null);
 
 const prompt = ref("");
+const forbiddenLetter = ref("");
+const exactLength = ref(0);
 const input = ref("");
 
 const lives = ref(STARTING_LIVES);
@@ -50,12 +130,17 @@ const gameOver = ref(false);
 
 // Timer
 const remainingTime = ref(STARTING_BOMB_TIME);
+const elapsedTime = ref(0);
 let timerId = null;
 let timerStartedAt = 0;
 let timerDuration = STARTING_BOMB_TIME;
+let gameStartedAt = 0;
 
 // keep track of used words
-const usedWordList = computed(() => Array.from(usedWords.value).slice().reverse());
+const usedWordList = computed(() => {
+  const words = Array.from(usedWords.value);
+  return words.slice().reverse();
+});
 
 // get the remaining letters once a user types in a valid word
 const lettersRem = computed(() => {
@@ -69,11 +154,38 @@ const lettersRem = computed(() => {
 
 // clamp bomb progress, percentage of remaining bomb time
 const bombProg = computed(() => {
-  return Math.max(0, Math.min(100, (remainingTime.value / timerDuration) * 100));
+  const remainingPercent = (remainingTime.value / timerDuration) * 100;
+  return Math.max(0, Math.min(100, remainingPercent));
 });
 
 // round up seconds to nearest whole number rather than showing time in ms
-const secondsRem = computed(() => Math.ceil(remainingTime.value / 1000));
+const secondsRem = computed(() => {
+  return Math.ceil(remainingTime.value / 1000);
+});
+
+const elapsedTimeLabel = computed(() => {
+  return formatElapsedTime(elapsedTime.value);
+});
+
+// Blanks mode should say "Match" because the user is matching a pattern, not including text
+const promptActionLabel = computed(() => {
+  if (mode.value === "blanks") {
+    return "Match";
+  }
+
+  return "Include";
+});
+
+// get curr mode settings, fallback to normal so the game still has values before mode is picked
+const activeModeSettings = computed(() => {
+  const settings = modeSettings[mode.value];
+
+  if (settings) {
+    return settings;
+  }
+
+  return modeSettings.normal;
+});
 
 /* Implement a function that takes a takes any text file and:
     - splits it into lines
@@ -89,13 +201,19 @@ function parseLines(text) {
 
 // Take the parseLines function and returns valid alternative if pokemon name has punctuation or weird chars
 function parsePokemonLines(text) {
-  return Array.from(
-    new Set(parseLines(text).flatMap((name) => { // ex: ["MEGA BLASTOISE"] -> ["MEGA", "BLASTOISE"]
-        const lettersOnlyName = name.replace(/[^A-Z]/g, ""); // MR. MIME = MRMIME | both are valid inputs
-        return lettersOnlyName && lettersOnlyName !== name ? [name, lettersOnlyName] : [name];
-      }),
-    ),
-  );
+  const pokemonNames = parseLines(text);
+  const pokemonNamesAndAlternates = pokemonNames.flatMap((name) => {
+  const lettersOnlyName = name.replace(/[^A-Z]/g, ""); // MR. MIME = MRMIME | both are valid inputs
+
+  if (lettersOnlyName && lettersOnlyName !== name) {
+    return [name, lettersOnlyName];
+  }
+  return [name];
+});
+
+  const uniquePokemonNames = new Set(pokemonNamesAndAlternates);
+
+  return Array.from(uniquePokemonNames);
 }
 
 /* Implement bomb party style used letters feature where
@@ -112,7 +230,126 @@ function createLetterTracker(count) {
 
 // choose a random prompt
 function choosePrompt() {
-  prompt.value = prompts[Math.floor(Math.random() * prompts.length)];
+  if (mode.value === "blanks") {
+    // Blanks mode uses its own prompt since it needs to add the underscore somewhere
+    chooseBlanksPattern();
+    return;
+  }
+
+  // Expert mode filters out shorter prompts so the prompt is harder to fit in a word
+  const minPromptLength = activeModeSettings.value.minPromptLength || 0;
+  let promptPool = prompts;
+
+  if (minPromptLength) {
+    promptPool = prompts.filter((entry) => entry.length >= minPromptLength);
+  }
+
+  let choices = prompts;
+
+  if (promptPool.length) {
+    choices = promptPool;
+  }
+
+  const choiceIndex = Math.floor(Math.random() * choices.length);
+
+  prompt.value = choices[choiceIndex];
+}
+
+// choose where the blank should go in blanks mode
+function chooseBlanksPattern() {
+  const sourcePromptIndex = Math.floor(Math.random() * prompts.length);
+  const sourcePrompt = prompts[sourcePromptIndex];
+  let choices = ["before", "after"];
+
+  // can only replace a real letter if the prompt has more than one letter
+  if (sourcePrompt.length > 1) {
+    choices = ["replace", "before", "after"];
+  }
+
+  const blankModeIndex = Math.floor(Math.random() * choices.length);
+  const blankMode = choices[blankModeIndex];
+
+  if (blankMode === "before") {
+    prompt.value = `_${sourcePrompt}`;
+    return;
+  }
+
+  if (blankMode === "after") {
+    prompt.value = `${sourcePrompt}_`;
+    return;
+  }
+
+  const blankIndex = Math.floor(Math.random() * sourcePrompt.length);
+
+  // replace one letter with _ so the player has to find a word that fits
+  prompt.value = sourcePrompt
+    .split("")
+    .map((letter, index) => {
+      if (index === blankIndex) {
+        return "_";
+      }
+
+      return letter;
+    })
+    .join("");
+}
+
+// choose a letter that is not already in the prompt so forbidden mode is still possible
+function chooseForbiddenLetter() {
+  if (mode.value !== "forbidden") {
+    forbiddenLetter.value = "";
+    return;
+  }
+
+  const promptLetters = new Set(prompt.value.replace(/[^A-Z]/g, ""));
+  const choices = alphabet.filter((letter) => !promptLetters.has(letter));
+  const choiceIndex = Math.floor(Math.random() * choices.length);
+
+  forbiddenLetter.value = choices[choiceIndex];
+}
+
+/* Implement exact length mode:
+  - find words that include the prompt
+  - keep only reasonable word lengths
+  - choose one of those lengths for the player to match
+ */
+function chooseExactLength() {
+  if (mode.value !== "exactLength") {
+    exactLength.value = 0;
+    return;
+  }
+
+  const matchingWords = normalWords.filter((word) => {
+    const includesPrompt = word.includes(prompt.value);
+    const isLongEnough = word.length >= MIN_EXACT_LENGTH;
+    const isShortEnough = word.length <= MAX_EXACT_LENGTH;
+
+    return includesPrompt && isLongEnough && isShortEnough;
+  });
+
+  const matchingLengths = matchingWords.map((word) => {
+    return word.length;
+  });
+
+  const possibleLengths = Array.from(new Set(matchingLengths));
+  let choices = possibleLengths;
+
+  if (!possibleLengths.length) {
+    choices = Array.from({ length: MAX_EXACT_LENGTH - MIN_EXACT_LENGTH + 1 }, (_, index) => {
+      return MIN_EXACT_LENGTH + index;
+    });
+  }
+
+  const choiceIndex = Math.floor(Math.random() * choices.length);
+
+  exactLength.value = choices[choiceIndex];
+}
+
+// choose every extra constraint that can change each round
+function chooseRoundConstraints() {
+  choosePrompt();
+  chooseForbiddenLetter();
+  chooseExactLength();
 }
 
 /* Implement choosing the next prompt for modes that allow it
@@ -120,35 +357,51 @@ function choosePrompt() {
  */
 function chooseNextPrompt(userInput) {
   if (mode.value !== "shiritori") {
-    choosePrompt();
+    chooseRoundConstraints();
     return;
   }
 
   const letters = userInput.replace(/[^A-Z]/g, ""); // gets rid of weird chars and symbols
   prompt.value = letters.slice(-1); // make last letter the new prompt
+  chooseForbiddenLetter();
+  chooseExactLength();
 }
 
 // How long curr bomb should last
 function getBombDuration() {
-  return Math.max(MIN_BOMB_TIME, STARTING_BOMB_TIME * (STREAK_SPEEDUP ** streak.value));
+  const settings = activeModeSettings.value;
+  const speedMultiplier = settings.speedup ** streak.value;
+  const streakDuration = settings.bombTime * speedMultiplier;
+  return Math.max(settings.minBombTime, streakDuration);
 }
 
 // Get mode labels
 function getModeLabel(selectedMode) {
-  // TODO: add all remaining modes
-  if (selectedMode === "hyphenated") {
-    return "Hyphenated";
-  }
+  const settings = modeSettings[selectedMode];
 
-  if (selectedMode === "pokemon") {
-    return "Pokemon";
-  }
-
-  if (selectedMode === "shiritori") {
-    return "Shiritori";
+  if (settings) {
+    return settings.label;
   }
 
   return "Normal";
+}
+
+function formatElapsedTime(milliseconds) {
+  const totalSeconds = Math.floor(milliseconds / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
+// keep the survived time display updated while the bomb timer is running
+function updateElapsedTime() {
+  if (!gameStartedAt) {
+    elapsedTime.value = 0;
+    return;
+  }
+
+  elapsedTime.value = Date.now() - gameStartedAt;
 }
 
 // Stop bomb timer
@@ -164,12 +417,17 @@ function stopBombTimer() {
  */
 function startBombTimer() {
   stopBombTimer();
+
   timerDuration = getBombDuration();
   remainingTime.value = timerDuration;
   timerStartedAt = Date.now(); // real time when bomb starts (set interval has delays)
 
   timerId = setInterval(() => {
-    remainingTime.value = Math.max(0, timerDuration - (Date.now() - timerStartedAt)); // calculates how much time passed since bomb started
+    const millisecondsSinceTimerStarted = Date.now() - timerStartedAt;
+    const nextRemainingTime = timerDuration - millisecondsSinceTimerStarted;
+
+    remainingTime.value = Math.max(0, nextRemainingTime); // calculates how much time passed since bomb started
+    updateElapsedTime();
 
     // if time is 0, handle whether game continues or end
     if (remainingTime.value <= 0) {
@@ -187,7 +445,7 @@ function startBombTimer() {
 function startGame(selectedMode) {
   mode.value = selectedMode;
 
-  lives.value = STARTING_LIVES;
+  lives.value = activeModeSettings.value.lives;
   streak.value = 0;
 
   letterCount.value = STARTING_LETTER_COUNT;
@@ -196,25 +454,61 @@ function startGame(selectedMode) {
 
   input.value = "";
   gameOver.value = false;
+  elapsedTime.value = 0;
+  gameStartedAt = Date.now();
   messageType.value = "neutral"; // show curr msg as normal msg, neither success nor error
-  message.value = `${getModeLabel(selectedMode)} mode. Type a word that includes the prompt.`;
+  message.value = `${getModeLabel(selectedMode)} mode. ${getModeInstruction(selectedMode)}`;
 
-  choosePrompt();
+  chooseRoundConstraints();
   startBombTimer();
+}
+
+// Mode instruction
+function getModeInstruction(selectedMode) {
+  if (selectedMode === "exactLength") {
+    return "Type a word that includes the prompt and has the exact required length.";
+  }
+
+  if (selectedMode === "blanks") {
+    return "Type a word that includes the blank pattern.";
+  }
+
+  if (selectedMode === "speedrun") {
+    return "Clear the alphabet once before the bomb gets you.";
+  }
+
+  if (selectedMode === "forbidden") {
+    return "Type a word that includes the prompt and avoids the forbidden letter.";
+  }
+
+  if (selectedMode === "expert") {
+    return "Type a word that includes the longer prompt.";
+  }
+
+  return "Type a word that includes the prompt.";
 }
 
 // Implement valid word logic, handle user errors but do not penalize user
 function isValidWord(userInput) {
-  if (!userInput.includes(prompt.value)) {
+  // Blanks mode does not check includes because the underscore can be any letter
+  if (mode.value === "blanks" && !matchesBlanksPattern(userInput)) {
+    return [false, `Your word must match "${prompt.value}".`];
+  }
+
+  if (mode.value !== "blanks" && !userInput.includes(prompt.value)) {
     return [false, `Your word must include "${prompt.value}".`];
+  }
+
+  if (mode.value === "exactLength" && userInput.length !== exactLength.value) {
+    return [false, `Exact Length mode requires ${exactLength.value} letters.`];
   }
 
   if (!dictionaries[mode.value].has(userInput)) {
     return [false, "That word is not in the dictionary."];
   }
 
-  if (mode.value === "hyphenated" && !userInput.includes("-")) {
-    return [false, "Hyphenated mode requires a hyphenated word."];
+  if (mode.value === "forbidden" && userInput.includes(forbiddenLetter.value)) {
+    return [false, `Forbidden Letter mode bans "${forbiddenLetter.value}" this round.`];
   }
 
   if (usedWords.value.has(userInput)) {
@@ -222,6 +516,14 @@ function isValidWord(userInput) {
   }
 
   return [true, "Valid word."];
+}
+
+// make _ work like any capital letter when checking the user's word
+function matchesBlanksPattern(userInput) {
+  const pattern = prompt.value.replaceAll("_", "[A-Z]");
+  const patternRegex = new RegExp(pattern);
+
+  return patternRegex.test(userInput);
 }
 
 // Implement keeping track of the used letters and mark them
@@ -250,6 +552,17 @@ function markUsedLetters(userInput) {
 
   // give a life to the player and incr the letter count if all letters are cleared
   if (allLettersCleared) {
+    // Speedrun ends after one alphabet clear instead of giving a bonus life
+    if (mode.value === "speedrun") {
+      lettersUsed.value = nextLetters;
+      gameOver.value = true;
+      updateElapsedTime();
+      stopBombTimer();
+      message.value = `Speedrun complete. You cleared the alphabet in ${elapsedTimeLabel.value}.`;
+      messageType.value = "success";
+      return true;
+    }
+
     lives.value += 1;
     letterCount.value += 1;
 
@@ -272,18 +585,19 @@ function loseLife(reason) {
   lives.value -= 1;
   streak.value = 0;
   input.value = "";
-  remainingTime.value = STARTING_BOMB_TIME;
+  remainingTime.value = activeModeSettings.value.bombTime;
 
   // end the game if no more lives are remaining
   if (lives.value <= 0) {
     gameOver.value = true;
+    updateElapsedTime();
     stopBombTimer();
-    message.value = "Game over. Start a new round to try again.";
+    message.value = `Game over. You survived ${elapsedTimeLabel.value}. Start a new round to try again.`;
     messageType.value = "error";
     return;
   }
 
-  choosePrompt();
+  chooseRoundConstraints();
   message.value = reason;
   messageType.value = "error";
   startBombTimer();
@@ -329,6 +643,7 @@ function submitWord() {
 
   usedWords.value = new Set([...usedWords.value, userInput]);
   streak.value += 1;
+
   const earnedAlphabetBonus = markUsedLetters(userInput);
 
   if (!earnedAlphabetBonus) {
@@ -337,6 +652,12 @@ function submitWord() {
   }
 
   input.value = "";
+
+  // speedrun can end inside markUsedLetters, so do NOT start a new prompt/timer after winning
+  if (gameOver.value) {
+    return;
+  }
+
   chooseNextPrompt(userInput);
   startBombTimer();
 }
@@ -350,29 +671,33 @@ onUnmounted(stopBombTimer); // stop timer when player leaves page
 </script>
 
 <template>
-  <div class="wordDynamite">
-    <section class="gameHeader">
+  <div class="wordDynamite" :class="{ playing: mode }">
+    <section class="gameHeader" :class="{ playing: mode }">
       <div>
-        <p class="gameTitle">rocksrocksrocks.net</p>
+        <p class="siteTitle">rocksrocksrocks.net</p>
         <h1> Word Dynamite</h1>
       </div>
 
       <div class="stats">
         <div>
           <span>Lives</span>
-          <strong>{{ lives }}</strong>
+          <strong>{{ mode ? lives : "--" }}</strong>
         </div>
         <div>
           <span>Streak</span>
-          <strong>{{ streak }}</strong>
+          <strong>{{ mode ? streak : "--" }}</strong>
         </div>
         <div>
           <span>Letters Left</span>
-          <strong>{{ lettersRem }}</strong>
+          <strong>{{ mode ? lettersRem : "--" }}</strong>
         </div>
         <div>
           <span>Time</span>
-          <strong>{{ secondsRem }}</strong>
+          <strong>{{ mode ? secondsRem : "--" }}</strong>
+        </div>
+        <div>
+          <span>Survived</span>
+          <strong>{{ mode ? elapsedTimeLabel : "--" }}</strong>
         </div>
       </div>
     </section>
@@ -381,64 +706,134 @@ onUnmounted(stopBombTimer); // stop timer when player leaves page
       <button class="modeButton" type="button" @click="startGame('normal')">
         Normal
       </button>
-      <button class="modeButton locked" type="button" disabled>Hard</button>
+      <button class="modeButton" type="button" @click="startGame('hard')">
+        Hard
+      </button>
+      <button class="modeButton" type="button" @click="startGame('expert')">
+        Expert
+      </button>
       <button class="modeButton" type="button" @click="startGame('shiritori')">
         Shiritori
       </button>
-      <button class="modeButton locked" type="button" disabled>Blanks</button>
+      <button class="modeButton" type="button" @click="startGame('blanks')">
+        Blanks
+      </button>
       <button class="modeButton" type="button" @click="startGame('pokemon')">
         Pokemon
       </button>
-      <button class="modeButton" type="button" @click="startGame('hyphenated')">
-        Hyphenated
+      <button class="modeButton" type="button" @click="startGame('exactLength')">
+        Exact Length
       </button>
-      <button class="modeButton locked" type="button" disabled>Expert</button>
+      <button class="modeButton" type="button" @click="startGame('speedrun')">
+        Speedrun
+      </button>
+      <button class="modeButton" type="button" @click="startGame('forbidden')">
+        Forbidden Letter
+      </button>
     </section>
 
-    <section v-else class="playPanel">
-      <div class="bombMeter" aria-label="Bomb timer">
-        <div :style="{ width: `${bombProg}%` }"></div>
-      </div>
+    <section v-if="!mode" class="infoPanel">
+      <h2>What Is Word Dynamite?</h2>
+      <p>
+        Word Dynamite is a timed word game where each answer must satisfy the current prompt before
+        the bomb runs out. Valid words reset the timer, build your streak, and mark off letters in
+        the alphabet tracker. Clear every letter to earn a bonus life and make the next alphabet
+        clear harder.
+      </p>
 
-      <div class="promptBox">
-        <span>Include</span>
-        <strong>{{ prompt }}</strong>
+      <h2>Information about Modes</h2>
+      <div class="modeInfoGrid">
+        <div>
+          <h3>Normal</h3>
+          <p>Type any dictionary word that includes the prompt.</p>
+        </div>
+        <div>
+          <h3>Hard</h3>
+          <p>Normal rules, but the bomb starts shorter and speeds up faster.</p>
+        </div>
+        <div>
+          <h3>Expert</h3>
+          <p>Normal rules, but prompts are longer and harder to fit into words.</p>
+        </div>
+        <div>
+          <h3>Shiritori</h3>
+          <p>Each new prompt is the final letter of your last accepted word.</p>
+        </div>
+        <div>
+          <h3>Blanks</h3>
+          <p>Match a prompt pattern with one missing letter, such as <span>I_G</span> or <span>ING_</span>.</p>
+        </div>
+        <div>
+          <h3>Pokemon</h3>
+          <p>Use Pokemon names instead of the normal word dictionary.</p>
+        </div>
+        <div>
+          <h3>Exact Length</h3>
+          <p>Type a word that includes the prompt and has the shown number of letters (this mode is very hard).</p>
+        </div>
+        <div>
+          <h3>Speedrun</h3>
+          <p>Start with one life and win by clearing the alphabet once as fast as possible.</p>
+        </div>
+        <div>
+          <h3>Forbidden Letter</h3>
+          <p>Include the prompt while avoiding the forbidden letter shown each round.</p>
+        </div>
       </div>
+    </section>
 
-      <form class="wordForm" @submit.prevent="submitWord">
-        <input
-          v-model="input"
-          :disabled="gameOver"
-          autocomplete="off"
-          placeholder="Type a word"
-          autofocus
+    <div v-else class="gameArea">
+      <section class="playPanel">
+        <div class="bombMeter" aria-label="Bomb timer">
+          <div :style="{ width: `${bombProg}%` }"></div>
+        </div>
+
+        <div class="promptBox">
+          <span>{{ promptActionLabel }}</span>
+          <strong>{{ prompt }}</strong>
+          <p v-if="mode === 'exactLength'" class="constraintHint">
+            Length: {{ exactLength }}
+          </p>
+          <p v-if="mode === 'forbidden'" class="forbiddenHint">
+            Forbidden: {{ forbiddenLetter }}
+          </p>
+        </div>
+
+        <form class="wordForm" @submit.prevent="submitWord">
+          <input
+            v-model="input"
+            :disabled="gameOver"
+            autocomplete="off"
+            placeholder="Type a word"
+            autofocus
+          >
+          <button type="submit" :disabled="gameOver">Submit</button>
+        </form>
+
+        <p class="message" :class="messageType">{{ message }}</p>
+
+        <div class="actions">
+          <button class="backButton" type="button" @click="quitMode">
+            Back
+          </button>
+          <button type="button" @click="startGame(mode)">
+            {{ gameOver ? "Play Again" : "Restart" }}
+          </button>
+        </div>
+      </section>
+
+      <section class="lettersPanel">
+        <div
+          v-for="letter in alphabet"
+          :key="letter"
+          class="letterTile"
+          :class="{ cleared: lettersUsed[letter] === 0 }"
         >
-        <button type="submit" :disabled="gameOver">Submit</button>
-      </form>
-
-      <p class="message" :class="messageType">{{ message }}</p>
-
-      <div class="actions">
-        <button class="backButton" type="button" @click="quitMode">
-          Back
-        </button>
-        <button type="button" @click="startGame(mode)">
-          {{ gameOver ? "Play Again" : "Restart" }}
-        </button>
-      </div>
-    </section>
-
-    <section class="lettersPanel">
-      <div
-        v-for="letter in alphabet"
-        :key="letter"
-        class="letterTile"
-        :class="{ cleared: lettersUsed[letter] === 0 }"
-      >
-        <span>{{ letter }}</span>
-        <strong>{{ lettersUsed[letter] }}</strong>
-      </div>
-    </section>
+          <span>{{ letter }}</span>
+          <strong>{{ lettersUsed[letter] }}</strong>
+        </div>
+      </section>
+    </div>
 
     <section v-if="usedWordList.length" class="usedPanel">
       <h2>Used Words: {{ usedWordList.length }}</h2>
@@ -453,8 +848,15 @@ onUnmounted(stopBombTimer); // stop timer when player leaves page
 .wordDynamite {
   color: white;
   margin: 0 auto;
-  max-width: 980px;
+  max-width: 1120px;
   padding: 28px 20px 48px;
+}
+
+.wordDynamite.playing {
+  align-items: start;
+  display: grid;
+  gap: 16px;
+  grid-template-columns: minmax(0, 1fr) 156px;
 }
 
 .gameHeader {
@@ -464,7 +866,13 @@ onUnmounted(stopBombTimer); // stop timer when player leaves page
   justify-content: space-between;
 }
 
-.gameTitle {
+.gameHeader.playing {
+  align-items: start;
+  grid-column: 1;
+  justify-content: space-between;
+}
+
+.siteTitle {
   color: #fa3434;
   font-size: 14px;
   font-weight: 700;
@@ -473,19 +881,24 @@ onUnmounted(stopBombTimer); // stop timer when player leaves page
 }
 
 h1 {
-  font-size: 64px;
-  line-height: 64px;
+  font-size: 54px;
+  line-height: 54px;
   margin: 0;
 }
 
 .stats {
   display: grid;
   gap: 10px;
-  grid-template-columns: repeat(4, 82px);
+  grid-template-columns: repeat(5, 82px);
+}
+
+.modeButton {
+  color: black;
 }
 
 .stats div,
 .modePanel,
+.infoPanel,
 .playPanel,
 .lettersPanel,
 .usedPanel {
@@ -516,9 +929,55 @@ h1 {
 .modePanel {
   display: grid;
   gap: 12px;
-  grid-template-columns: repeat(4, 140px);
+  grid-template-columns: repeat(7, 140px);
   margin-top: 24px;
-  padding: 18px;
+  padding: 12px;
+}
+
+.infoPanel {
+  margin-top: 24px;
+  padding: 22px;
+}
+
+.infoPanel h2 {
+  color: #fa3434;
+  font-size: 22px;
+  line-height: 26px;
+  margin: 0 0 10px;
+}
+
+.infoPanel h2:not(:first-child) {
+  margin-top: 24px;
+}
+
+.infoPanel p {
+  color: #d0d0d0;
+  line-height: 24px;
+  margin: 0;
+}
+
+.modeInfoGrid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.modeInfoGrid div {
+  background: #191919;
+  border: 1px solid #444444;
+  border-radius: 6px;
+  padding: 14px;
+}
+
+.modeInfoGrid h3 {
+  color: #ffffff;
+  font-size: 16px;
+  margin: 0 0 6px;
+}
+
+.modeInfoGrid span {
+  color: #fa3434;
+  font-weight: 800;
 }
 
 button {
@@ -539,10 +998,14 @@ button:disabled,
   cursor: not-allowed;
 }
 
+.gameArea {
+  display: contents;
+}
+
 .playPanel {
+  grid-column: 1;
   display: grid;
   gap: 16px;
-  margin-top: 24px;
   padding: 20px;
 }
 
@@ -569,6 +1032,15 @@ button:disabled,
   display: block;
   font-size: 96px;
   line-height: 96px;
+}
+
+.constraintHint,
+.forbiddenHint {
+  color: #ffcc66;
+  font-size: 18px;
+  font-weight: 800;
+  margin: 8px 0 0;
+  text-transform: uppercase;
 }
 
 .wordForm {
@@ -619,25 +1091,38 @@ input {
 .lettersPanel {
   box-sizing: border-box;
   display: grid;
-  gap: 8px;
-  grid-template-columns: repeat(13, 64px);
+  gap: 6px;
+  align-self: stretch;
+  grid-column: 2;
+  grid-row: 1 / 3;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(8, 1fr);
   justify-content: center;
-  margin-top: 24px;
-  padding: 14px;
+  overflow: hidden;
+  padding: 10px;
 }
 
 .letterTile {
   background: #151515;
   border: 1px solid #555;
   border-radius: 6px;
-  min-height: 54px;
-  padding: 6px 4px;
+  min-height: 36px;
+  padding: 4px;
   text-align: center;
 }
 
 .letterTile span,
 .letterTile strong {
   display: block;
+}
+
+.letterTile span {
+  font-size: 13px;
+}
+
+.letterTile strong {
+  color: #fa3434;
+  font-size: 15px;
 }
 
 .letterTile.cleared {
@@ -670,14 +1155,30 @@ input {
 
 /* Screen responsiveness */
 @media (max-width: 980px) {
+  .wordDynamite.playing {
+    grid-template-columns: minmax(0, 1fr) 138px;
+  }
+
   .lettersPanel {
-    grid-template-columns: repeat(13, 52px);
+    grid-template-columns: repeat(3, 38px);
   }
 }
 
 @media (max-width: 860px) {
+  .wordDynamite.playing {
+    grid-template-columns: 1fr;
+  }
+
+  .gameArea {
+    display: grid;
+    gap: 16px;
+  }
+
   .lettersPanel {
-    grid-template-columns: repeat(7, 64px);
+    grid-column: auto;
+    grid-row: auto;
+    grid-template-columns: repeat(13, minmax(0, 1fr));
+    overflow: visible;
   }
 }
 
@@ -701,13 +1202,17 @@ input {
     grid-template-columns: repeat(2, 140px);
   }
 
+  .modeInfoGrid {
+    grid-template-columns: 1fr;
+  }
+
   .promptBox strong {
     font-size: 48px;
     line-height: 48px;
   }
 
   .lettersPanel {
-    grid-template-columns: repeat(7, 36px);
+    grid-template-columns: repeat(7, minmax(0, 1fr));
   }
 }
 </style>

@@ -13,12 +13,6 @@
       href: "#/wordlegame",
     },
     {
-      title: "Wavelength",
-      description: "Guessing game about finding common ground.",
-      image: "cartoon-wavelength-temp.png",
-      href: "#/wavelength",
-    },
-    {
       title: "Project Dodge",
       description: "SURVIVE FOR 120s, dodge incoming enemies.",
       image: "Red_Square.png",
