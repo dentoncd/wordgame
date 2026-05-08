@@ -4,7 +4,6 @@ import home from './home.vue'
 import about from './about.vue'
 import worddynamite from './worddynamite.vue'
 import wordlegame from './wordlegame.vue'
-import wavelength from './wavelength.vue'
 import projectdodge from './projectdodge.vue'
 import request from './request.vue'
 
@@ -14,7 +13,6 @@ const routes = {
   '/request' : request,
   '/worddynamite' : worddynamite,
   '/wordlegame' : wordlegame,
-  '/wavelength' : wavelength,
   '/projectdodge' : projectdodge
 }
 
@@ -62,7 +60,7 @@ const currView = computed(() => {
     <v-main>
       <component :is="currView"></component>
     </v-main>
-    <v-footer app class="footer-color-custom" border="md">Copyright 2026</v-footer>
+    <v-footer app class="footer-color-custom" border="md">Copyright © 2026</v-footer>
   </v-app>
 </template>
 
